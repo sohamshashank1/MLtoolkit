@@ -1,5 +1,5 @@
-# All vs All
-*This runs binary classifier for every possible pair of classes and treat it as an election – whichever class gets the most votes wins. If we have three classes of data (red, blue and green) we would train one binary classifier for each pair of classes: 1) red vs. blue, 2) blue vs.green and 3) red vs. green.
+## All vs All
+* This runs binary classifier for every possible pair of classes and treat it as an election – whichever class gets the most votes wins. If we have three classes of data (red, blue and green) we would train one binary classifier for each pair of classes: 1) red vs. blue, 2) blue vs.green and 3) red vs. green.
 * When new data point comes in, you check which side of each decision boundary it is on and see which class is most popular: If a new data point is on the green side of both the red vs. green and the blue vs. green hyperplanes then you classify it as green
 
 # One vs All
