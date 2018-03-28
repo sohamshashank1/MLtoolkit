@@ -22,7 +22,7 @@ These are ensemble methods which uses a combination of models to improve the cla
 This has been achieved by parallelizing split, i.e by sorting all the features globally and then scanning linearly to find the best split. 
 - The concept implementation can be explored from [this](https://github.com/dmlc/xgboost) link. 
 
-
+------------------------------------------------------------------------------------------------------------------------------------------
 
 ## Welcome to GitHub Pages
 
