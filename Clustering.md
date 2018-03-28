@@ -1,5 +1,5 @@
 # Assessing Clustering Tendency
-Before applying nay clustering technique we need to check if the randomness in the data. That is data should be non - uniformly distributed to be clustered. 
+Before applying any clustering technique we need to check if the randomness in the data. That is data should be non - uniformly distributed to be clustered. 
 
 ## Hopkins Statistic (H)
 The Hopkins Statistic is a spatial statistic that tests the spatial randomness of a variable as distributed in a space.
