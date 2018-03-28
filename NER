@@ -1,6 +1,7 @@
 ## Identifying if its Name of a person or Business Entity using Stanford NER Parser in Python 
 ### Sample code 
 
+```
 os.chdir("...")
 ner_file = pd.read_csv("...", sep =",", header = None, encoding='latin-1')
 ner_sample = ner_file.sample(frac=0.00005)
@@ -30,3 +31,4 @@ for s in range(0,len(ls)):
         a = l2[0]
     ms1 = pd.DataFrame({'bsn': ls[s], 'tag': a }, index=[0])
     master = master.append(ms1)
+```
