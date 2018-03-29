@@ -1,5 +1,7 @@
 ## Objective to to classify text/ sentences using RNN 
-## IMDB dataset is considered which contains 25,000 highly-polar movie reviews (good or bad) for training and the same amount again for testing. The problem is to determine whether a given movie review has a positive or negative sentiment.
+
+### IMDB dataset is considered which contains 25,000 highly-polar movie reviews (good or bad) for training and testing
+### The problem is to determine whether a given movie review has a positive or negative sentiment.
 
 ```
 # LSTM for sequence classification in the IMDB dataset
