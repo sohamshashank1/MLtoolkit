@@ -77,3 +77,4 @@ def jaccard(a,b,n):
 result_df1['sim'] = result_df1.apply(lambda x:jaccard(x[0], x[6], 2), axis = 1)
 ```
 ##
+```
