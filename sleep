@@ -1,0 +1,59 @@
+```
+newdf = (df.groupby(['agg', 'chn', 'ctg', 'mcc'])['cbsnm']
+        .apply(lambda x: x if (len(x) <=5000) else x.sample(5000))
+        .reset_index(level=4, drop=True)
+        .reset_index())
+        
+train_df = shuffle(newdf)
+train_df['cbsnm'].fillna(' ',inplace=True)
+
+x = divmod(len(train_df),50)[0] + 1
+
+ags = pd.DataFrame(train_df['agg'].unique())
+ags.columns = ['agg']
+a = divmod(train_df['agg'].nunique(),50)
+
+r = pd.DataFrame(list(range(1,51)))
+r.columns = ['id']
+
+s = pd.DataFrame(list(range(1,a[1] + 1)))
+s.columns = ['id']
+
+l = pd.DataFrame()
+for i in range(1,a[0] + 1):
+    l = pd.concat([l,r],axis=0)
+    
+l = pd.concat([l,s],axis=0)
+
+aggid = pd.concat([ags.reset_index(drop=True),l.reset_index(drop=True)],axis=1)
+
+
+import numpy as np
+final_ans = pd.DataFrame()
+for s in range(1,51):
+    tr = train_df.loc[train_df['agg'].isin(aggid[aggid['id'] == s]['agg'])]
+    train_dtm = bigram_vectorizer.transform(tr.cbsnm)
+    train_chn_dtm = countvec1.transform(tr.chn)
+    train_ctgy_dtm = countvec2.transform(tr.ctg)
+    train_mcc_dtm = countvec3.transform(tr.mcc)
+    dtm_final_train= hstack([train_dtm, train_chn_dtm, train_ctgy_dtm,train_mcc_dtm])
+    rf = RandomForestClassifier()
+    rf_model = rf.fit(dtm_final_train, tr['agg'])
+    predicted_df = pd.DataFrame(rf_model.predict(dtm_final_test))
+    predicted_df.columns = ['Pred_RF' + str(s)]
+    predicted_df_proba = pd.DataFrame(rf_model.predict_proba(dtm_final_test))
+    predicted_df_proba.columns = rf_model.classes_
+    cnames = list(predicted_df_proba)
+    predicted_df_proba['Hi_Scr_' + str(s)] = predicted_df_proba[cnames].apply(max, axis=1)
+    High_prob = predicted_df_proba['Hi_Scr_' + str(s)]
+    final_ans = pd.concat([final_ans.reset_index(drop=True), predicted_df.reset_index(drop=True),High_prob.reset_index(drop=True)], axis=1)
+    print(s)
+    
+a = final_ans.filter(like='Hi_Scr').values
+b = a.argmax(axis=1)
+c = final_ans.filter(like='Pred_RF').values[np.arange(len(final_ans.index)), b]
+d = a[np.arange(len(final_ans.index)), b]
+df = pd.DataFrame({'pred_agg':c, 'hi_scr':d}, columns=['pred_agg','hi_scr'])
+pred_rf = pd.concat([test.reset_index(drop=True), df.reset_index(drop=True)], axis=1)
+
+```
