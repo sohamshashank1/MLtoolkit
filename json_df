@@ -1,0 +1,18 @@
+import pandas as pd
+data = [{'name': 'vikash', 'age': 27}, {'name': 'Satyam', 'age': 14}]
+df = pd.DataFrame.from_dict(data, orient='columns')
+
+df
+Out[4]:
+   age  name
+0   27  vikash
+1   14  Satyam
+
+
+
+jsondata = '{"0001":{"FirstName":"John","LastName":"Mark","MiddleName":"Lewis","username":"johnlewis2","password":"2910"}}'
+import json
+import pandas as pd
+jdata = json.loads(jsondata)
+df = pd.DataFrame(jdata)
+print df.T
