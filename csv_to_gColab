@@ -3,29 +3,35 @@
 import tensorflow as tf
 tf.test.gpu_device_name()
 
+# Install the PyDrive wrapper & import libraries.
+# This only needs to be done once per notebook.
 !pip install -U -q PyDrive
- 
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from google.colab import auth
 from oauth2client.client import GoogleCredentials
- 
-# 1. Authenticate and create the PyDrive client.
+
+# Authenticate and create the PyDrive client.
+# This only needs to be done once per notebook.
 auth.authenticate_user()
 gauth = GoogleAuth()
 gauth.credentials = GoogleCredentials.get_application_default()
 drive = GoogleDrive(gauth)
+```
+## to view the files in a folder 
 
+```
 file_list = drive.ListFile({'q': "'<FOLDER ID>' in parents and trashed=false"}).GetList()
 for file1 in file_list:
   print('title: %s, id: %s' % (file1['title'], file1['id']))
-  
-  ```
+ ```
   
  ## output would be 
 title: train.csv, id: <TRAIN_FILE_ID>
 title: test.csv, id: <TEST_FILE_ID>
 
+
+## If the file id is ready, just Authenticate (step 1) then download the file in make it available for Colab notebook
 ```
 train_downloaded = drive.CreateFile({'id': '<TRAIN_FILE_ID>'})
 train_downloaded.GetContentFile('train.csv')
