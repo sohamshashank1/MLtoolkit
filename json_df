@@ -16,3 +16,7 @@ import pandas as pd
 jdata = json.loads(jsondata)
 df = pd.DataFrame(jdata)
 print df.T
+
+
+
+https://help.parsehub.com/hc/en-us/articles/219619888-Analyzing-JSON-With-Python
