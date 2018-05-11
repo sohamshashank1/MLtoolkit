@@ -27,8 +27,9 @@ flag = pd.DataFrame(p)
 flag.columns = ['flag']
 final = pd.concat([bus.reset_index(drop=True), flag.reset_index(drop=True)], axis = 1)
 ```
+# list 
+```
 
-'''
 n = bus_nm[10:50]
 f = []
 for i in range(0,len(n)):
@@ -36,5 +37,6 @@ for i in range(0,len(n)):
     print(i)
     if set(l).issubset(set(dic_list)):
         f.append(n[i]) 
-        '''
+      
+ ``` 
         
