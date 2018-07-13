@@ -1,0 +1,31 @@
+'''
+Gini is better than entropy 
+min_samples_split = 0.0001 as it goes on decreasing on float gives better results 
+min_samples_leaf = 0.000001 lesser the better, same is the case with integer, 100 - 0.3 accuracy ( but less value gives more noise)
+min_weight_fraction_leaf must in [0, 0.5] - 0.0 best value 
+max_leaf_nodes - max the better 
+oob_score = True - gives a lower but useful score 
+maximum depth of the tree (controlled by the max_depth parameter) is set too high, the decision trees learn too fine details of the training data and learn from the noise, i.e. they overfit.
+
+class sklearn.ensemble.BaggingClassifier
+A Bagging classifier is an ensemble meta-estimator that fits base classifiers each on random subsets of the original dataset and then aggregate their individual predictions (either by voting or by averaging) to form a final prediction. This reduces the variance
+'''
+
+'''
+Forest of Randomized Tree 
+	1. RF 
+		a. RandomForestClassifier
+		b. RandomForestRegressor
+	2. Extremely randomized trees
+		a.  ExtraTreesClassifier
+		b. ExtraTreesRegressor
+		c. RandomTreesEmbedding
+	3. Adaboost 
+		a.  AdaBoostClassifier
+		b.  AdaBoostRegressor
+	4. Gradient Tree Boosting
+		a. GradientBoostingClassifier
+		b. GradientBoostingRegressor 
+	5. Partial Dependence Plot
+	6. VotingClassifier
+'''
