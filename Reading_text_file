@@ -1,0 +1,19 @@
+import pandas as pd
+import numpy as np
+import os 
+os.chdir('')
+data = 'list_2.txt'
+import codecs
+file = codecs.open(data, "r",encoding='utf-8', errors='ignore')
+lines = file.read().split("\n")
+
+a = []
+b = []
+c = []
+
+for s in range(0,len(lines)-1):
+    l = lines[s].split(",")
+    if len(l) == 3:
+        a.append(l[0])
+        b.append(l[1])
+        c.append(l[2])
