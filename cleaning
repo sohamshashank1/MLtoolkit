@@ -1,0 +1,5 @@
+CAST(TRIM(
+                  REGEXP_REPLACE(
+                REGEXP_REPLACE(TRANSLATE(BUS_NM USING LATIN_TO_UNICODE WITH ERROR), '([[:punct:]]+|[[:digit:]]+)','',1,0,'i'),'(\s{1})(\1+)','\1',1,0,'i')
+) 
+        AS VARCHAR(50))
