@@ -1,0 +1,142 @@
+import re
+import pandas as pd
+import networkx as nx
+import numpy as np
+import difflib
+from metaphone import doublemetaphone
+from difflib import SequenceMatcher
+import os
+import teradata
+import time
+import jellyfish as jl
+
+# Change the director
+
+
+# Create empty dataframes and network graph to append results later
+
+G=nx.Graph()
+#fc = pd.DataFrame()
+#fcc = pd.DataFrame()
+#clus = pd.DataFrame()
+#cluss = pd.DataFrame()
+
+# Import csv table to pandas data frame - Single Column and do all the necessary cleanings
+
+df = pd.read_csv('merchname.csv', sep=',',  encoding='latin-1')
+df.columns = ['bnm']
+df.dropna(axis=0, how='any', thresh=None, subset=None, inplace=True)
+df.drop_duplicates(keep = 'last',inplace = True)
+df['cbsnm'] = df['bnm'].str.replace('[^a-zA-Z\s]','')
+df['cbsnm'] = df['cbsnm'].apply(lambda x: x.strip())
+df['cbsnm'] = df['cbsnm'].apply(lambda x: re.sub(r'\s+', ' ', x))
+df['cbsnm'] = df['cbsnm'].apply(lambda x: x.upper())
+
+# Get the double metaphone and parse the first 4 characters to cluster the cleaned business names based on the double metaphone
+
+cbn = pd.DataFrame(df.ix[:,1])
+cbn['cbsnm'] = cbn['cbsnm'].apply(lambda x: x.upper())
+cbn.drop_duplicates(keep = 'last',inplace = True)
+cbn['metap'] = cbn['cbsnm'].apply(lambda x: doublemetaphone(x)[0])
+cbn['meta'] = cbn['metap'].apply(lambda x: x[:4])
+cbn['id'] = pd.Series(cbn['meta']).astype('category').cat.codes
+cbn.sort_values(by=['id'],ascending=[True],inplace = True)
+cbn['id'] = cbn['id'].apply(lambda x: x+1)
+
+# Get the cluster counts to pass it to the Jaccard step
+
+cnt = cbn.groupby('id').count().reset_index()
+cnt.drop(cnt.columns[[2, 3]], axis=1, inplace=True)
+cnt.columns=['id','Count']
+counts = cnt.loc[(cnt.Count > 1) & (cnt.Count <= 3000)]
+countssi = cnt.loc[cnt.Count == 1]
+countscu = cnt.loc[cnt.Count > 3000]
+#counts.sort_values(by=['Count'],ascending=[True],inplace = True)
+
+# Get those clusters where count(*) is > 3000 and re-cluster using the entire double metaphone value
+fl = cbn.loc[cbn['id'].isin(countscu['id'])]
+fl.drop(fl.columns[[2, 3]], axis=1, inplace=True)
+fl['id'] = pd.Series(fl['metap']).astype('category').cat.codes
+fl.sort_values(by=['id'],ascending=[True],inplace = True)
+fl['id'] = fl['id'].apply(lambda x: x+1)
+
+# Get the cluster counts to pass it to the Jaccard step
+
+nct = fl.groupby('id').count().reset_index()
+nct.drop(nct.columns[[2]], axis=1, inplace=True)
+nct.columns=['id','Count']
+ncounts = nct.loc[(nct.Count > 1) & (nct.Count <= 3000)]
+ncountssi = nct.loc[nct.Count == 1]
+ncountscu = nct.loc[nct.Count > 3000]
+
+countss = nct.loc[(nct.Count > 1) & (nct.Count <= 3000)]
+#countss.sort_values(by=['Count'],ascending=[True],inplace = True)
+
+counts = counts.append(countss)
+
+# Function for getting the Jaccard dissimilarity score using n-grams, change accordingly
+
+def jaccard(a,b,n):
+ s = [a[i:i+n] for i in range(len(a)-n+1)]
+ t = [b[i:i+n] for i in range(len(b)-n+1)]
+ if len(list(set(s) | set(t))) >0:
+  jac_coeff = 1 -  len(list(set(s) & set(t))) / len(list(set(s) | set(t)))
+ else:
+  jac_coeff = 1
+ return jac_coeff
+
+# Function to obtain all the combinations with Jaccard score less than a cut-off value
+
+def jaccomb(x):
+ ds = pd.DataFrame(cbn.loc[cbn['id'] == counts['id'].iloc[x]].ix[:,0])
+ sj = pd.DataFrame([ (i,j) for i in ds.cbsnm for j in ds.cbsnm if (i>j) ])
+ sj['sim'] = sj.apply(lambda z: jaccard(z[0], z[1],2), axis=1)
+ tj = pd.DataFrame(sj.loc[sj['sim']<=0.5].ix[:,0:3])
+ tj.columns = ['nm1','nm2','jac']
+ return(tj)
+
+fc = pd.concat(map(jaccomb, range(0,len(counts))))
+
+#fcc = pd.concat(map(jaccomb, range(0,len(countss))))
+
+# Save the combinations that satisfied a particular cut-off for future use
+
+#fc.to_pickle('jaccard.pkl')
+
+# Obtain all the combinations with Jaccard score less than a cut-off value (Repeated step)
+
+# Append the obtained dataframe to that obtained in the previous jaccard step
+
+#fc = fc.append(fcc)
+
+fc.to_pickle('jaccard06.pkl')
+
+# Intutively select a cutoff and get those combinations for the optnet step
+
+# Cluster the connected components to get the final clustering
+
+def finonet(cutoff):
+ fd = fc[fc.jac <= cutoff][['nm1','nm2']]
+ fd.columns = ['from','to']
+ G = nx.from_pandas_dataframe(fd, 'from' , 'to', edge_attr=None, create_using=None)
+ c = sorted(nx.connected_components(G), key=len, reverse=True)
+ def optnet(i):
+  s = pd.DataFrame(list(c[i]))
+  s['id'] = i +1
+  return(s)
+ clus = pd.concat(map(optnet, range(0,len(c))))
+ clus.columns = ['bnm','id']
+ singl = cbn.loc[~cbn['cbsnm'].isin(clus['bnm'])]
+ singl.drop(singl.columns[[1,2,3]], axis=1, inplace=True)
+ singl.columns = ['bnm']
+ singl['id'] = 0
+ fclus = clus.append(singl)
+ fclus.columns = ['cbsnm','id']
+ return(fclus)
+
+fulclus01 = finonet(0.1)
+
+# Join the master set on cleaned business name to get the non-cleaned clustering and save as a csv for further processing
+
+master = pd.merge(df,fulclus01,on='cbsnm')
+master.to_csv('finclus2.csv', encoding='utf-8', index = False)
