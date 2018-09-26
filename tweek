@@ -1,0 +1,24 @@
+n,k = divmod(len(test),1000000)
+
+master = pd.DataFrame()
+for ts in np.array_split(test,n+1):
+    test_dtm = bigram_vectorizer.transform(ts.cbsnm)
+    test_chn_dtm = countvec1.transform(ts.chn)
+    test_ctgy_dtm = countvec2.transform(ts.ctg)
+    test_mcc_dtm = countvec3.transform(ts.mcc)
+    dtm_final_test = hstack([test_dtm, test_chn_dtm, test_ctgy_dtm,test_mcc_dtm])
+    final_ans = pd.DataFrame()
+    for s in tqdm(range(1,51)):
+        rf_model = joblib.load('rf_model_clus' + str(s) + '.pkl')
+        
+        res['scr3'] = res['cbsnm'].apply(lambda x:len(str(x)))
+res['scr4'] = res['pred_agg'].apply(lambda x:len(str(x)))
+res.sort_values(by=['scr3'], ascending=False,inplace=True)
+c = res[0:1]
+res = res[1:]
+res.sort_values(by=['scr4'], ascending=False,inplace=True)
+d = res[0:1]
+res = res[1:]
+c = c.append(d)
+c = c.append(res)
+c['mcc'] = c['mcc'].apply(lambda x: x.replace('M',''))
