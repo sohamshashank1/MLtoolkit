@@ -1,0 +1,697 @@
+bigram_vocab_dict = np.load('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Data/vocab_dict_bigram.npy').item()
+
+bigram_vectorizer = CountVectorizer(ngram_range=(2, 2), analyzer='char', 
+                                    stop_words=None, lowercase=False, min_df=1, vocabulary=bigram_vocab_dict, binary=True)
+
+trigram_vocab_dict = np.load('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Data/vocab_dict_trigram.npy').item()
+
+trigram_vectorizer = CountVectorizer(ngram_range=(3, 3), analyzer='char', 
+                                     stop_words=None, lowercase=False, min_df=1, vocabulary=trigram_vocab_dict, binary=True)
+
+feature_name_list = list(bigram_vocab_dict.keys())
+feature_name_list.extend(list(trigram_vocab_dict.keys()))
+
+feature_name_extend = [
+                       'CLN_NM_BiGram_JaroWinkler',
+                       'CLN_NM_BiGram_Levenshtein',
+                       'CLN_NM_BiGram_Cosine',
+                       'CLN_NM_BiGram_Jaccard',
+                       'CLN_NM_BiGram_OverlapCoefficient',
+                       'CLN_NM_TriGram_JaroWinkler',
+                       'CLN_NM_TriGram_Levenshtein',
+                       'CLN_NM_TriGram_Cosine',
+                       'CLN_NM_TriGram_Jaccard',
+                       'CLN_NM_TriGram_OverlapCoefficient',
+                       'GCI_CNT'
+                      ]
+
+feature_name_list.extend(feature_name_extend)
+N_add_feature = len(feature_name_extend)
+
+def NM_CLEAN_FUNC(char_var):
+#     char_var = re.sub("[0-9]", "", str(char_var))
+    char_var = char_var.strip() 
+    if len(char_var) == 0:
+        return '#BUSINESS_NAME_IS_TOO_GENERAL#'   
+    regex = re.compile('[%s]' % re.escape(string.punctuation))
+    char_var = re.sub(' +',' ',regex.sub(' ', char_var.upper())).strip()
+
+    WORD_2_RMV = [
+                  'AND',
+                  'THE',
+                  'OF'
+                 ]
+    
+    remove = '|'.join(WORD_2_RMV)
+    regex = re.compile(r'\b('+remove+r')\b', flags=re.IGNORECASE)
+    char_var = re.sub(r'\s+', " ", regex.sub("", char_var)).strip()
+   
+    if char_var == '':
+        return '#BUSINESS_NAME_IS_TOO_GENERAL#'
+    else:
+        output = " ".join([char for char in char_var.split()])
+        return unicodedata.normalize('NFD', output).encode('ascii', 'ignore').decode("utf-8") 
+
+INPUT_DATA_FILE = os.path.join(server_path, proj_path, 'Data/input',
+                               'B2B_BUS_NM_GCI_TRAIN.csv')
+TRUTH_DATA_FILE = os.path.join(server_path, proj_path, 'Data/input',
+                               'B2B_BUS_NM_GCI_TRUTH.csv')
+SCORE_DATA_FILE = os.path.join(server_path, proj_path, 'Data/input',
+                               'B2B_BUS_NM_GCI_SCORE.csv')
+
+exec(open(os.path.join(server_path, 'Python_Code_Library', 'TimerStarter.py')).read())
+
+print('Loading Data...')
+print('*' * 64)
+
+INPUT_DATA = pd.read_csv(INPUT_DATA_FILE
+                         , encoding='latin-1'
+                         , na_filter=True
+                        )
+
+# Convert string columns to upper case
+CHAR_COLUMNS = list(INPUT_DATA.select_dtypes(include=['object']))
+INPUT_DATA[CHAR_COLUMNS] = INPUT_DATA[CHAR_COLUMNS].apply(lambda x: x.astype(str).str.upper())
+
+# Remove the rows with empty business names if exist
+NM_COLUMNS = ['LHS_NAME', 'RHS_NAME'] # where RHS is fixed. We want to match LHS to RHS (look up LHS in RHS)
+INPUT_DATA = INPUT_DATA[-pd.isnull(INPUT_DATA[NM_COLUMNS[0]])&-pd.isnull(INPUT_DATA[NM_COLUMNS[1]])]
+INPUT_DATA.index = range(INPUT_DATA.shape[0])
+
+# Create cleaned business name columns
+if __name__ == "__main__":
+    pool = mp.Pool(processes=n_cores)
+    m = mp.Manager()
+    LHS_NAME_CLN = pool.map(NM_CLEAN_FUNC, INPUT_DATA['LHS_NAME'])
+    RHS_NAME_CLN = pool.map(NM_CLEAN_FUNC, INPUT_DATA['RHS_NAME'])
+    pool.close()
+    pool.terminate()
+else:
+    pass
+INPUT_DATA['LHS_NAME_CLN'] = LHS_NAME_CLN
+INPUT_DATA['RHS_NAME_CLN'] = RHS_NAME_CLN
+
+# Create business name concatenation and pair
+INPUT_DATA['NM_CONCAT'] = INPUT_DATA['LHS_NAME_CLN']    +    INPUT_DATA['RHS_NAME_CLN']
+INPUT_DATA['NM_PAIR']   = INPUT_DATA['LHS_NAME_CLN'] + ',' + INPUT_DATA['RHS_NAME_CLN']
+
+exec(open(os.path.join(server_path, 'Python_Code_Library', 'TimerPrinter.py')).read())
+
+# Load Truth Dataset
+TRUTH_DATA = pd.read_csv(TRUTH_DATA_FILE, 
+                         encoding='latin-1', 
+                         na_filter=True)
+
+TRUTH_DATA = TRUTH_DATA.rename(columns={'BUS_NM_ID'  :'LHS_ORIG_ID',
+                                        'PRIMARY_GCI':'RHS_ORIG_ID'
+                                        })
+
+TRUTH_DATA['RESPONSE'] = 1
+
+INPUT_DATA = INPUT_DATA.merge(TRUTH_DATA, on=['LHS_ORIG_ID','RHS_ORIG_ID'], how='left')
+INPUT_DATA.loc[pd.isnull(INPUT_DATA['RESPONSE']),'RESPONSE'] = 0
+INPUT_DATA['RESPONSE'] = INPUT_DATA['RESPONSE'].astype(int)
+
+# random.seed(time.time())
+# seed = random.randint(0, 2**32 - 1)
+
+TRAIN_DATA, VALIDATION_DATA = train_test_split(INPUT_DATA,
+                                               train_size = 0.9,
+                                               test_size = 0.1,
+                                               random_state = 20180706,
+                                               stratify=INPUT_DATA['RESPONSE'])
+
+TRAIN_DATA.reset_index(drop=True,inplace=True)
+VALIDATION_DATA.reset_index(drop=True,inplace=True)
+
+_, TUNE_DATA = train_test_split(TRAIN_DATA,
+                                test_size = 10000,
+                                random_state = 20180707,
+                                stratify=TRAIN_DATA['RESPONSE'])
+
+TUNE_DATA.reset_index(drop=True,inplace=True)
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerStarter.py').read())
+
+for Ngram_para in range(2,4):
+    
+    ws = sm.QgramTokenizer(qval=Ngram_para, return_set=True, prefix_pad=' ', suffix_pad=' ')
+    
+    if Ngram_para == 2:
+        vocab_dict = bigram_vocab_dict
+    elif Ngram_para == 3:
+        vocab_dict = trigram_vocab_dict
+    else:
+        vocab_dict = None
+        
+    if __name__ == "__main__":
+        pool = mp.Pool(processes=n_cores)
+        m = mp.Manager()
+        
+        sm_NGRAM_JaroWinkler        = pool.map(sm_JaroWinkler,        list(TUNE_DATA['NM_PAIR']))
+        sm_NGRAM_Levenshtein        = pool.map(sm_Levenshtein,        list(TUNE_DATA['NM_PAIR']))
+        sm_NGRAM_Cosine             = pool.map(sm_Cosine,             list(TUNE_DATA['NM_PAIR']))
+        sm_NGRAM_Jaccard            = pool.map(sm_Jaccard,            list(TUNE_DATA['NM_PAIR']))
+        sm_NGRAM_OverlapCoefficient = pool.map(sm_OverlapCoefficient, list(TUNE_DATA['NM_PAIR']))
+        
+        pool.close()
+        pool.terminate()
+    else:
+        pass
+
+    if Ngram_para == 2:
+        TUNE_DATA['CLN_NM_BiGram_JaroWinkler']        = sm_NGRAM_JaroWinkler
+        TUNE_DATA['CLN_NM_BiGram_Levenshtein']        = sm_NGRAM_Levenshtein
+        TUNE_DATA['CLN_NM_BiGram_Cosine']             = sm_NGRAM_Cosine
+        TUNE_DATA['CLN_NM_BiGram_Jaccard']            = sm_NGRAM_Jaccard
+        TUNE_DATA['CLN_NM_BiGram_OverlapCoefficient'] = sm_NGRAM_OverlapCoefficient
+    elif Ngram_para == 3:
+        TUNE_DATA['CLN_NM_TriGram_JaroWinkler']        = sm_NGRAM_JaroWinkler
+        TUNE_DATA['CLN_NM_TriGram_Levenshtein']        = sm_NGRAM_Levenshtein
+        TUNE_DATA['CLN_NM_TriGram_Cosine']             = sm_NGRAM_Cosine
+        TUNE_DATA['CLN_NM_TriGram_Jaccard']            = sm_NGRAM_Jaccard
+        TUNE_DATA['CLN_NM_TriGram_OverlapCoefficient'] = sm_NGRAM_OverlapCoefficient
+    else:
+        pass
+    
+tune_bigram_counts  = bigram_vectorizer.fit_transform(TUNE_DATA['NM_CONCAT'])
+tune_trigram_counts = trigram_vectorizer.fit_transform(TUNE_DATA['NM_CONCAT'])
+
+X_TUNE = hstack([tune_bigram_counts,
+                 tune_trigram_counts,
+                 TUNE_DATA[feature_name_list[-N_add_feature:]]])
+
+Y_TUNE = TUNE_DATA['RESPONSE']
+XGB_TUNE = xgb.DMatrix(X_TUNE, label=Y_TUNE)
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerPrinter.py').read())
+
+# Initialize the hyperparameters for Xgboost
+
+num_boost_round = 200
+early_stopping_rounds = 10
+
+PARAMS_XGB = {
+    # Parameters that we are going to tune.
+    'max_depth'        : 6,
+    'min_child_weight' : 1,
+    'gamma'            : 0,
+    'subsample'        : 1,
+    'colsample_bytree' : 1,
+    'reg_alpha'        : 0,
+    'learning_rate'    : 0.1,
+    # Other parameters
+    'nthread'          : -1,
+    'silent'           : 1,
+    'process_type'     : 'default',
+    'objective'        : 'binary:logistic',
+    'eval_metric'      : 'rmse'}
+
+print('Tuning max_depth...')
+print('*' * 64)
+
+seed = 20180707
+
+min_metric = float("Inf")
+best_params = None
+for max_depth in range(1, 6):
+    print("CV with max_depth={}".format(max_depth))
+    # We update our parameters
+    PARAMS_XGB['max_depth'] = max_depth
+    # Run and time CV
+    cv_results = xgb.cv(params = PARAMS_XGB,
+                        dtrain = XGB_TUNE,
+                        num_boost_round = num_boost_round,
+                        seed = seed,
+                        stratified=True,
+                        nfold = 5,
+                        metrics = {'rmse'},
+                        early_stopping_rounds = early_stopping_rounds
+                       )
+    
+    # Update best score
+    mean_metric  = cv_results['test-rmse-mean'].min()
+    boost_rounds = cv_results['test-rmse-mean'].idxmin()
+    print("\trmse {:.6f} for {} rounds".format(mean_metric, boost_rounds))
+    if mean_metric < min_metric:
+        min_metric = mean_metric
+        best_params = max_depth
+print("Best max_depth: {}, rmse: {:.6f}".format(best_params, min_metric))
+print('*' * 64)
+
+PARAMS_XGB['max_depth'] = best_params
+
+# print('Tuning gamma...')
+# print('*' * 64)
+
+# # Define initial best params and rmse
+# min_metric = float("Inf")
+# best_params = None
+# for gamma in [i/10.0 for i in range(0,11,2)]:
+#     print("CV with gamma={}".format(gamma))
+#     # We update our parameters
+#     PARAMS_XGB['gamma'] = gamma
+#     # Run and time CV
+#     cv_results = xgb.cv(params = PARAMS_XGB,
+#                         dtrain = XGB_TUNE,
+#                         num_boost_round = num_boost_round,
+#                         seed = seed,
+#                         stratified=True,
+#                         nfold = 5,
+#                         metrics = {'rmse'},
+#                         early_stopping_rounds = early_stopping_rounds
+#                        )
+    
+#     # Update best score
+#     mean_metric  = cv_results['test-rmse-mean'].min()
+#     boost_rounds = cv_results['test-rmse-mean'].idxmin()
+#     print("\trmse {:.6f} for {} rounds".format(mean_metric, boost_rounds))
+#     if mean_metric < min_metric:
+#         min_metric = mean_metric
+#         best_params = gamma
+# print("Best gamma: {}, rmse: {:.6f}".format(best_params, min_metric))
+# print('*' * 64)
+
+# PARAMS_XGB['gamma'] = best_params
+
+# print('Tuning subsample and colsample_bytree...')
+# print('*' * 64)
+
+# gridsearch_params = [(subsample, colsample_bytree)
+#                      for subsample in [i/10. for i in range(6,11,2)]
+#                      for colsample_bytree in [i/10. for i in range(6,11,2)]
+#                     ]
+
+# # Define initial best params and rmse
+# min_metric = float("Inf")
+# best_params = None
+# # We start by the largest values and go down to the smallest
+# for subsample, colsample_bytree in reversed(gridsearch_params):
+#     print("CV with subsample={}, colsample_bytree={}".format(
+#         subsample,
+#         colsample_bytree))
+#     # Update our parameters
+#     PARAMS_XGB['subsample'] = subsample
+#     PARAMS_XGB['colsample_bytree'] = colsample_bytree
+#     # Run CV
+#     cv_results = xgb.cv(params = PARAMS_XGB,
+#                         dtrain = XGB_TUNE,
+#                         num_boost_round = num_boost_round,
+#                         seed = seed,
+#                         stratified=True,
+#                         nfold = 5,
+#                         metrics = {'rmse'},
+#                         early_stopping_rounds = early_stopping_rounds
+#                        )
+
+#     # Update best score
+#     mean_metric  = cv_results['test-rmse-mean'].min()
+#     boost_rounds = cv_results['test-rmse-mean'].idxmin()
+#     print("\trmse {:.6f} for {} rounds".format(mean_metric, boost_rounds))
+#     if mean_metric < min_metric:
+#         min_metric = mean_metric
+#         best_params = (subsample, colsample_bytree)
+# print("Best subsample and colsample_bytree: {}, {}, rmse: {:.6f}".format(best_params[0], best_params[1], min_metric))
+# print('*' * 64)
+
+# PARAMS_XGB['subsample']        = best_params[0]
+# PARAMS_XGB['colsample_bytree'] = best_params[1]
+
+# print('Tuning reg_alpha...')
+# print('*' * 64)
+
+# # Define initial best params and rmse
+# min_metric = float("Inf")
+# best_params = None
+# for reg_alpha in [0, 1e-5, 1e-2, 0.1, 1]:
+#     print("CV with reg_alpha={}".format(reg_alpha))
+#     # We update our parameters
+#     PARAMS_XGB['reg_alpha'] = reg_alpha
+#     # Run and time CV
+#     cv_results = xgb.cv(params = PARAMS_XGB,
+#                         dtrain = XGB_TUNE,
+#                         num_boost_round = num_boost_round,
+#                         seed = seed,
+#                         stratified=True,
+#                         nfold = 5,
+#                         metrics = {'rmse'},
+#                         early_stopping_rounds = early_stopping_rounds
+#                        )
+    
+#     # Update best score
+#     mean_metric  = cv_results['test-rmse-mean'].min()
+#     boost_rounds = cv_results['test-rmse-mean'].idxmin()
+#     print("\trmse {:.6f} for {} rounds".format(mean_metric, boost_rounds))
+#     if mean_metric < min_metric:
+#         min_metric = mean_metric
+#         best_params = reg_alpha
+# print("Best reg_alpha: {}, rmse: {:.6f}".format(best_params, min_metric))
+# print('*' * 64)
+
+# PARAMS_XGB['reg_alpha'] = best_params
+
+# print('Tuning learning_rate...')
+# print('*' * 64)
+
+# # Define initial best params and rmse
+# min_metric = float("Inf")
+# best_params = None
+
+# for learning_rate in [1, .5, .1, .05, .01]:
+# # for learning_rate in [1, .9, .8, .7, .6, .5]:
+#     print("CV with learning_rate={}".format(learning_rate))
+
+#     # We update our parameters
+#     PARAMS_XGB['learning_rate'] = learning_rate
+
+#     # Run and time CV
+#     cv_results = xgb.cv(params = PARAMS_XGB,
+#                         dtrain = XGB_TUNE,
+#                         num_boost_round = num_boost_round,
+#                         seed = seed,
+#                         stratified=True,
+#                         nfold = 5,
+#                         metrics = {'rmse'},
+#                         early_stopping_rounds = early_stopping_rounds
+#                        )
+
+#     # Update best score
+#     mean_metric  = cv_results['test-rmse-mean'].min()
+#     boost_rounds = cv_results['test-rmse-mean'].idxmin()
+#     print("\trmse {:.6f} for {} rounds".format(mean_metric, boost_rounds))
+#     if mean_metric < min_metric:
+#         min_metric = mean_metric
+#         best_params = learning_rate
+
+# print("Best learning_rate: {}, rmse: {:.6f}".format(best_params, min_metric))
+# print('*' * 64)
+
+# PARAMS_XGB['learning_rate'] = best_params
+
+exec(open(os.path.join(server_path, 'Python_Code_Library', 'TimerStarter.py')).read())
+
+print('Loading Data...')
+print('*' * 64)
+
+SCORE_DATA = pd.read_csv(SCORE_DATA_FILE
+                         , encoding='latin-1'
+                         , na_filter=True
+                        )
+
+# Convert string columns to upper case
+CHAR_COLUMNS = list(SCORE_DATA.select_dtypes(include=['object']))
+SCORE_DATA[CHAR_COLUMNS] = SCORE_DATA[CHAR_COLUMNS].apply(lambda x: x.astype(str).str.upper())
+
+# Remove the rows with empty business names if exist
+NM_COLUMNS = ['LHS_NAME', 'RHS_NAME'] # where RHS is fixed. We want to match LHS to RHS (look up LHS in RHS)
+SCORE_DATA = SCORE_DATA[-pd.isnull(SCORE_DATA[NM_COLUMNS[0]])&-pd.isnull(SCORE_DATA[NM_COLUMNS[1]])]
+SCORE_DATA.index = range(SCORE_DATA.shape[0])
+
+# Create cleaned business name columns
+if __name__ == "__main__":
+    pool = mp.Pool(processes=n_cores)
+    m = mp.Manager()
+    LHS_NAME_CLN = pool.map(NM_CLEAN_FUNC, SCORE_DATA['LHS_NAME'])
+    RHS_NAME_CLN = pool.map(NM_CLEAN_FUNC, SCORE_DATA['RHS_NAME'])
+    pool.close()
+    pool.terminate()
+else:
+    pass
+SCORE_DATA['LHS_NAME_CLN'] = LHS_NAME_CLN
+SCORE_DATA['RHS_NAME_CLN'] = RHS_NAME_CLN
+
+# Create business name concatenation and pair
+SCORE_DATA['NM_CONCAT'] = SCORE_DATA['LHS_NAME_CLN']    +    SCORE_DATA['RHS_NAME_CLN']
+SCORE_DATA['NM_PAIR']   = SCORE_DATA['LHS_NAME_CLN'] + ',' + SCORE_DATA['RHS_NAME_CLN']
+
+exec(open(os.path.join(server_path, 'Python_Code_Library', 'TimerPrinter.py')).read())
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerStarter.py').read())
+
+ALL_DATA = INPUT_DATA
+
+for Ngram_para in range(2,4):
+    ws = sm.QgramTokenizer(qval=Ngram_para, return_set=True, prefix_pad=' ', suffix_pad=' ')
+
+    if __name__ == "__main__":
+        pool = mp.Pool(processes=n_cores)
+        m = mp.Manager()
+
+        ALL_sm_NGRAM_JaroWinkler        = pool.map(sm_JaroWinkler,        list(ALL_DATA['NM_PAIR']))
+        ALL_sm_NGRAM_Levenshtein        = pool.map(sm_Levenshtein,        list(ALL_DATA['NM_PAIR']))
+        ALL_sm_NGRAM_Cosine             = pool.map(sm_Cosine,             list(ALL_DATA['NM_PAIR']))
+        ALL_sm_NGRAM_Jaccard            = pool.map(sm_Jaccard,            list(ALL_DATA['NM_PAIR']))
+        ALL_sm_NGRAM_OverlapCoefficient = pool.map(sm_OverlapCoefficient, list(ALL_DATA['NM_PAIR']))
+        
+        TRAIN_sm_NGRAM_JaroWinkler        = pool.map(sm_JaroWinkler,        list(TRAIN_DATA['NM_PAIR']))
+        TRAIN_sm_NGRAM_Levenshtein        = pool.map(sm_Levenshtein,        list(TRAIN_DATA['NM_PAIR']))
+        TRAIN_sm_NGRAM_Cosine             = pool.map(sm_Cosine,             list(TRAIN_DATA['NM_PAIR']))
+        TRAIN_sm_NGRAM_Jaccard            = pool.map(sm_Jaccard,            list(TRAIN_DATA['NM_PAIR']))
+        TRAIN_sm_NGRAM_OverlapCoefficient = pool.map(sm_OverlapCoefficient, list(TRAIN_DATA['NM_PAIR']))
+
+        VALIDATION_sm_NGRAM_JaroWinkler        = pool.map(sm_JaroWinkler,        list(VALIDATION_DATA['NM_PAIR']))
+        VALIDATION_sm_NGRAM_Levenshtein        = pool.map(sm_Levenshtein,        list(VALIDATION_DATA['NM_PAIR']))
+        VALIDATION_sm_NGRAM_Cosine             = pool.map(sm_Cosine,             list(VALIDATION_DATA['NM_PAIR']))
+        VALIDATION_sm_NGRAM_Jaccard            = pool.map(sm_Jaccard,            list(VALIDATION_DATA['NM_PAIR']))
+        VALIDATION_sm_NGRAM_OverlapCoefficient = pool.map(sm_OverlapCoefficient, list(VALIDATION_DATA['NM_PAIR']))
+        
+        SCORE_sm_NGRAM_JaroWinkler        = pool.map(sm_JaroWinkler,        list(SCORE_DATA['NM_PAIR']))
+        SCORE_sm_NGRAM_Levenshtein        = pool.map(sm_Levenshtein,        list(SCORE_DATA['NM_PAIR']))
+        SCORE_sm_NGRAM_Cosine             = pool.map(sm_Cosine,             list(SCORE_DATA['NM_PAIR']))
+        SCORE_sm_NGRAM_Jaccard            = pool.map(sm_Jaccard,            list(SCORE_DATA['NM_PAIR']))
+        SCORE_sm_NGRAM_OverlapCoefficient = pool.map(sm_OverlapCoefficient, list(SCORE_DATA['NM_PAIR']))
+        
+        pool.close()
+        pool.terminate()
+    else:
+        pass
+
+    if Ngram_para == 2:
+        ALL_DATA['CLN_NM_BiGram_JaroWinkler']        =  ALL_sm_NGRAM_JaroWinkler       
+        ALL_DATA['CLN_NM_BiGram_Levenshtein']        =  ALL_sm_NGRAM_Levenshtein       
+        ALL_DATA['CLN_NM_BiGram_Cosine']             =  ALL_sm_NGRAM_Cosine            
+        ALL_DATA['CLN_NM_BiGram_Jaccard']            =  ALL_sm_NGRAM_Jaccard           
+        ALL_DATA['CLN_NM_BiGram_OverlapCoefficient'] =  ALL_sm_NGRAM_OverlapCoefficient
+
+        TRAIN_DATA['CLN_NM_BiGram_JaroWinkler']        =  TRAIN_sm_NGRAM_JaroWinkler       
+        TRAIN_DATA['CLN_NM_BiGram_Levenshtein']        =  TRAIN_sm_NGRAM_Levenshtein       
+        TRAIN_DATA['CLN_NM_BiGram_Cosine']             =  TRAIN_sm_NGRAM_Cosine            
+        TRAIN_DATA['CLN_NM_BiGram_Jaccard']            =  TRAIN_sm_NGRAM_Jaccard           
+        TRAIN_DATA['CLN_NM_BiGram_OverlapCoefficient'] =  TRAIN_sm_NGRAM_OverlapCoefficient
+
+        VALIDATION_DATA['CLN_NM_BiGram_JaroWinkler']        =  VALIDATION_sm_NGRAM_JaroWinkler       
+        VALIDATION_DATA['CLN_NM_BiGram_Levenshtein']        =  VALIDATION_sm_NGRAM_Levenshtein       
+        VALIDATION_DATA['CLN_NM_BiGram_Cosine']             =  VALIDATION_sm_NGRAM_Cosine            
+        VALIDATION_DATA['CLN_NM_BiGram_Jaccard']            =  VALIDATION_sm_NGRAM_Jaccard           
+        VALIDATION_DATA['CLN_NM_BiGram_OverlapCoefficient'] =  VALIDATION_sm_NGRAM_OverlapCoefficient
+        
+        SCORE_DATA['CLN_NM_BiGram_JaroWinkler']        =  SCORE_sm_NGRAM_JaroWinkler       
+        SCORE_DATA['CLN_NM_BiGram_Levenshtein']        =  SCORE_sm_NGRAM_Levenshtein       
+        SCORE_DATA['CLN_NM_BiGram_Cosine']             =  SCORE_sm_NGRAM_Cosine            
+        SCORE_DATA['CLN_NM_BiGram_Jaccard']            =  SCORE_sm_NGRAM_Jaccard           
+        SCORE_DATA['CLN_NM_BiGram_OverlapCoefficient'] =  SCORE_sm_NGRAM_OverlapCoefficient
+        
+    elif Ngram_para == 3:
+        ALL_DATA['CLN_NM_TriGram_JaroWinkler']        =  ALL_sm_NGRAM_JaroWinkler       
+        ALL_DATA['CLN_NM_TriGram_Levenshtein']        =  ALL_sm_NGRAM_Levenshtein       
+        ALL_DATA['CLN_NM_TriGram_Cosine']             =  ALL_sm_NGRAM_Cosine            
+        ALL_DATA['CLN_NM_TriGram_Jaccard']            =  ALL_sm_NGRAM_Jaccard           
+        ALL_DATA['CLN_NM_TriGram_OverlapCoefficient'] =  ALL_sm_NGRAM_OverlapCoefficient
+
+        TRAIN_DATA['CLN_NM_TriGram_JaroWinkler']        =  TRAIN_sm_NGRAM_JaroWinkler       
+        TRAIN_DATA['CLN_NM_TriGram_Levenshtein']        =  TRAIN_sm_NGRAM_Levenshtein       
+        TRAIN_DATA['CLN_NM_TriGram_Cosine']             =  TRAIN_sm_NGRAM_Cosine            
+        TRAIN_DATA['CLN_NM_TriGram_Jaccard']            =  TRAIN_sm_NGRAM_Jaccard           
+        TRAIN_DATA['CLN_NM_TriGram_OverlapCoefficient'] =  TRAIN_sm_NGRAM_OverlapCoefficient
+
+        VALIDATION_DATA['CLN_NM_TriGram_JaroWinkler']        =  VALIDATION_sm_NGRAM_JaroWinkler       
+        VALIDATION_DATA['CLN_NM_TriGram_Levenshtein']        =  VALIDATION_sm_NGRAM_Levenshtein       
+        VALIDATION_DATA['CLN_NM_TriGram_Cosine']             =  VALIDATION_sm_NGRAM_Cosine            
+        VALIDATION_DATA['CLN_NM_TriGram_Jaccard']            =  VALIDATION_sm_NGRAM_Jaccard           
+        VALIDATION_DATA['CLN_NM_TriGram_OverlapCoefficient'] =  VALIDATION_sm_NGRAM_OverlapCoefficient
+
+        SCORE_DATA['CLN_NM_TriGram_JaroWinkler']        =  SCORE_sm_NGRAM_JaroWinkler       
+        SCORE_DATA['CLN_NM_TriGram_Levenshtein']        =  SCORE_sm_NGRAM_Levenshtein       
+        SCORE_DATA['CLN_NM_TriGram_Cosine']             =  SCORE_sm_NGRAM_Cosine            
+        SCORE_DATA['CLN_NM_TriGram_Jaccard']            =  SCORE_sm_NGRAM_Jaccard           
+        SCORE_DATA['CLN_NM_TriGram_OverlapCoefficient'] =  SCORE_sm_NGRAM_OverlapCoefficient
+
+    else:
+        pass
+        
+bigram_all_counts         = bigram_vectorizer.fit_transform(ALL_DATA['NM_CONCAT'])
+bigram_train_counts       = bigram_vectorizer.fit_transform(TRAIN_DATA['NM_CONCAT'])
+bigram_validation_counts  = bigram_vectorizer.fit_transform(VALIDATION_DATA['NM_CONCAT'])
+bigram_score_counts       = bigram_vectorizer.fit_transform(SCORE_DATA['NM_CONCAT'])
+
+trigram_all_counts        = trigram_vectorizer.fit_transform(ALL_DATA['NM_CONCAT'])
+trigram_train_counts      = trigram_vectorizer.fit_transform(TRAIN_DATA['NM_CONCAT'])
+trigram_validation_counts = trigram_vectorizer.fit_transform(VALIDATION_DATA['NM_CONCAT'])
+trigram_score_counts      = trigram_vectorizer.fit_transform(SCORE_DATA['NM_CONCAT'])
+
+X_ALL = hstack([bigram_all_counts, trigram_all_counts,
+                ALL_DATA[feature_name_list[-N_add_feature:]]])
+X_TRAIN = hstack([bigram_train_counts, trigram_train_counts,
+                  TRAIN_DATA[feature_name_list[-N_add_feature:]]])
+X_VALIDATION = hstack([bigram_validation_counts, trigram_validation_counts,
+                       VALIDATION_DATA[feature_name_list[-N_add_feature:]]])
+X_SCORE = hstack([bigram_score_counts, trigram_score_counts,
+                  SCORE_DATA[feature_name_list[-N_add_feature:]]])
+
+Y_ALL = ALL_DATA['RESPONSE']
+Y_TRAIN = TRAIN_DATA['RESPONSE']
+Y_VALIDATION = VALIDATION_DATA['RESPONSE']
+
+XGB_ALL = xgb.DMatrix(X_ALL, label=Y_ALL)
+XGB_TRAIN = xgb.DMatrix(X_TRAIN, label=Y_TRAIN)
+XGB_VALIDATION = xgb.DMatrix(X_VALIDATION, label=Y_VALIDATION)
+XGB_SCORE = xgb.DMatrix(X_SCORE)
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerPrinter.py').read())
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerStarter.py').read())
+
+XGB_MODEL = xgb.train(params = PARAMS_XGB, 
+                      dtrain = XGB_TRAIN,
+                      evals = [(XGB_TRAIN, 'train')],
+                      verbose_eval = False,
+                      early_stopping_rounds = early_stopping_rounds,
+                      num_boost_round = num_boost_round)
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerPrinter.py').read())
+
+Y_VALIDATION_pred_prob = XGB_MODEL.predict(XGB_VALIDATION)
+
+precision, recall, thresholds = metrics.precision_recall_curve(list(Y_VALIDATION), list(Y_VALIDATION_pred_prob))
+precision = np.delete(precision, -1)
+recall = np.delete(recall, -1)
+i = np.arange(len(precision)) # index for df
+prc = pd.DataFrame({'precision' : pd.Series(precision, index = i),
+                    'recall' : pd.Series(recall, index = i),
+                    'f1' : pd.Series(2*precision*recall/(precision+recall), index = i),
+                    'thresholds' : pd.Series(thresholds, index = i)})
+PROB_CUTOFF = float(prc.thresholds[prc.f1.argsort()[len(precision)-1:]])
+
+print('f1 cutoff is {:.6f}'.format(PROB_CUTOFF))
+print('*' * 64)
+
+Y_VALIDATION_pred_binary = [1 if val >= PROB_CUTOFF else 0 for i, val in enumerate(Y_VALIDATION_pred_prob)]
+Y_VALIDATION_pred = pd.Series(Y_VALIDATION_pred_binary, name='PREDICTION')
+Y_VALIDATION_actu = pd.Series(list(Y_VALIDATION), name='ACTUAL')
+
+print('Validation Performance:')
+print('Precision={:.4f}, Recall={:.4f}, Accuracy={:.4f}, F={:.4f}'.\
+      format(metrics.precision_score(Y_VALIDATION_actu, Y_VALIDATION_pred), 
+             metrics.recall_score   (Y_VALIDATION_actu, Y_VALIDATION_pred),
+             metrics.accuracy_score (Y_VALIDATION_actu, Y_VALIDATION_pred),
+             metrics.f1_score       (Y_VALIDATION_actu, Y_VALIDATION_pred)))
+print('*' * 64)
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerStarter.py').read())
+
+XGB_MODEL = xgb.train(params = PARAMS_XGB, 
+                      dtrain = XGB_ALL,
+                      evals = [(XGB_ALL, 'train')],
+                      verbose_eval = False,
+                      early_stopping_rounds = early_stopping_rounds,
+                      num_boost_round = num_boost_round)
+
+XGB_MODEL.save_model(os.path.join(server_path, proj_path, 'Model', 'B2B_BUS_NM_GCI_FINAL_VERSION_20180809.model'))
+
+exec(open('/storage/EIX_LAB_NH_1/usr/zkln15u/Python_Code_Library/TimerPrinter.py').read())
+
+Y_ALL_pred_prob = XGB_MODEL.predict(XGB_ALL)
+
+precision, recall, thresholds = metrics.precision_recall_curve(list(Y_ALL), list(Y_ALL_pred_prob))
+precision = np.delete(precision, -1)
+recall = np.delete(recall, -1)
+i = np.arange(len(precision)) # index for df
+prc = pd.DataFrame({'precision' : pd.Series(precision, index = i),
+                    'recall' : pd.Series(recall, index = i),
+                    'f1' : pd.Series(2*precision*recall/(precision+recall), index = i),
+                    'thresholds' : pd.Series(thresholds, index = i)})
+PROB_CUTOFF = float(prc.thresholds[prc.f1.argsort()[len(precision)-1:]])
+
+print('f1 cutoff is {:.6f}'.format(PROB_CUTOFF))
+print('*' * 64)
+
+SCORE_PRED = SCORE_DATA[['LHS_ORIG_ID',
+                         'LHS_NAME',
+                         'RHS_ORIG_ID',
+                         'RHS_NAME',
+                         'Family_GCI',
+                         'Ent_Life_Cycle_Desc',
+                         'TRE',
+                         'GCI_CNT']]
+
+SCORE_PRED['PREDICTION_CONF'] = Y_SCORE_pred_prob
+
+SCORE_PRED_RANK = SCORE_PRED.copy()
+
+SCORE_PRED_RANK['GCI_EQUAL_RANK'] = 2
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['RHS_ORIG_ID']==SCORE_PRED_RANK['Family_GCI'],'GCI_EQUAL_RANK'] = 1
+
+SCORE_PRED_RANK['Ent_Life_Cycle_Desc_RANK'] = 5
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['Ent_Life_Cycle_Desc']=='A. CLIENT',        'Ent_Life_Cycle_Desc_RANK'] = 1
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['Ent_Life_Cycle_Desc']=='C. FORMER CLIENT', 'Ent_Life_Cycle_Desc_RANK'] = 2
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['Ent_Life_Cycle_Desc']=='B. PROSPECT',      'Ent_Life_Cycle_Desc_RANK'] = 3
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['Ent_Life_Cycle_Desc']=='D. OTHER',         'Ent_Life_Cycle_Desc_RANK'] = 4
+
+SCORE_PRED_RANK['TRE_RANK'] = 1
+SCORE_PRED_RANK.loc[SCORE_PRED_RANK['TRE']<=0,'TRE_RANK'] = 2
+
+SCORE_PRED_RANK['GCI_CNT_RANK'] = SCORE_PRED_RANK.groupby('LHS_ORIG_ID')['GCI_CNT'].\
+rank(ascending=False, method='first').astype(int)
+
+SCORE_PRED_RANK['PRED_CONF_RANK'] = SCORE_PRED_RANK.groupby('LHS_ORIG_ID')['PREDICTION_CONF'].\
+rank(ascending=False, method='first').astype(int)
+
+SCORE_PRED_RANK = SCORE_PRED_RANK.sort_values(by=['LHS_ORIG_ID', 'PRED_CONF_RANK'], ascending=[True, True])
+
+SCORE_PRED_RANK['FINAL_RANK'] = SCORE_PRED_RANK['PRED_CONF_RANK']
+
+SCORE_PRED_RK1 = SCORE_PRED_RANK[SCORE_PRED_RANK['PRED_CONF_RANK']==1]
+
+# PRED_CONF_L = 0.2
+
+for i in log_progress(SCORE_PRED_RK1['LHS_ORIG_ID'], every=10):
+    RK1_PRED_CONF = SCORE_PRED_RK1.loc[SCORE_PRED_RK1['LHS_ORIG_ID']==i, 'PREDICTION_CONF'].values[0]
+#     PRED_CONF_L = RK1_PRED_CONF * (1 - .1)
+    SCORE_PRED_i = SCORE_PRED_RANK[(SCORE_PRED_RANK['LHS_ORIG_ID']==i)&(SCORE_PRED_RANK['PREDICTION_CONF']>=PROB_CUTOFF)]
+    if SCORE_PRED_i.shape[0] > 1:
+        new_rank = 1
+        for j in SCORE_PRED_i.sort_values(by=['PREDICTION_CONF',
+                                              'GCI_EQUAL_RANK',
+                                              'TRE_RANK',
+                                              'Ent_Life_Cycle_Desc_RANK',
+                                              'GCI_CNT_RANK'], ascending=[False, True, True, True, True]).index:
+            SCORE_PRED_RANK.loc[j, 'FINAL_RANK'] = new_rank
+            new_rank += 1
+            
+SCORE_PRED_RANK['RESPONSE'] = 0
+SCORE_PRED_RANK.loc[(SCORE_PRED_RANK['FINAL_RANK']==1)&(SCORE_PRED_RANK['PREDICTION_CONF']>=PROB_CUTOFF),'RESPONSE'] = 1
+del SCORE_PRED_RANK['GCI_EQUAL_RANK']
+del SCORE_PRED_RANK['Ent_Life_Cycle_Desc_RANK']
+del SCORE_PRED_RANK['TRE_RANK']
+del SCORE_PRED_RANK['PRED_CONF_RANK']
+del SCORE_PRED_RANK['GCI_CNT_RANK']
+
+SCORE_PRED_RANK.sort_index(inplace=True)
+
+SCORE_OUTPUT_FILENAME = os.path.join(server_path, proj_path, 'Data/output', 'B2B_BUS_NM_GCI_SCORE_OUTPUT_FINAL_VERSION_20180809.csv')
+SCORE_PRED_RANK.to_csv(SCORE_OUTPUT_FILENAME, index=False)
+
+SCORE_PRED_4_TERADATA = pd.read_csv(SCORE_OUTPUT_FILENAME
+                                    , encoding='latin-1'
+                                    , na_filter=True
+                                   )
+
+SCORE_PRED_4_TERADATA = SCORE_PRED_4_TERADATA.rename(columns={'RESPONSE'    : 'Review_1',
+                                                              'LHS_ORIG_ID' : 'BUS_NM_ID',
+                                                              'RHS_ORIG_ID' : 'PRIMARY_GCI'})
+
+Output_To_Teradata(input_dataset=SCORE_PRED_4_TERADATA,
+                   output_table='USER_IX.B2B_BUS_NM_GCI_SCORE_FINAL_VERSION_20180809', 
+                   userid='zkln15u',
+                   passwd='xjzmll05',
+                   batch_size=5000)
