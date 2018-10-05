@@ -32,3 +32,34 @@ for s in range(0,len(ls)):
     ms1 = pd.DataFrame({'bsn': ls[s], 'tag': a }, index=[0])
     master = master.append(ms1)
 ```
+-----------------------------------------------------------------------------------------------
+
+```
+mylist  = pd.read_csv()
+mylist.columns = ['ids', 'name']
+ids = mylist['ids'].tolist()
+names = mylist['name'].tolist()
+r = list()
+for i in range(0,len(names)):
+    s = word_tokenize(names[i])
+    for t in range(0,len(s)):
+        r.append(s[t])
+dic_full = pd.DataFrame(r)
+dic_full.columns = ['NAME']
+dictionary = dic_full.sample(frac = 0.6)
+
+p = list()
+for i in range(0, len(names)):
+    s = word_tokenize(names[i])
+    m = 0
+    for j in range(0,len(s)):
+        if dictionary['NAME'].str.contains(s[j]).any():
+            m = m+1
+    if m == len(s):
+        p.append(1)
+    else:
+        p.append(0)
+
+flag = pd.DataFrame(p)
+flag.columns = ['flag']
+final = pd.concat([mylist.reset_index(drop=True), flag.reset_index(drop=True)], axis = 1)
