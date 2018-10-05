@@ -1,0 +1,21 @@
+res['scr1'] = res['1'].apply(lambda x:len(str(x)))
+res['scr2'] = res['2'].apply(lambda x:len(str(x)))
+res['scr3'] = res['3'].apply(lambda x:len(str(x)))
+res['scr4'] = res['4'].apply(lambda x:len(str(x)))
+
+res.sort_values(by=['scr1'], ascending=False,inplace=True)
+a = res[0:1]
+res = res[1:]
+res.sort_values(by=['scr2'], ascending=False,inplace=True)
+b = res[0:1]
+res = res[1:]
+res.sort_values(by=['scr3'], ascending=False,inplace=True)
+c = res[0:1]
+res = res[1:]
+res.sort_values(by=['scr4'], ascending=False,inplace=True)
+d = res[0:1]
+res = res[1:]
+a = a.append(b)
+a = a.append(c)
+a = a.append(d)
+a = a.append(res)
