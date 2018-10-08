@@ -1,0 +1,94 @@
+import pandas as pd
+import numpy as np
+from keras.layers.core import Dense, Activation, Dropout
+from keras.layers.recurrent import LSTM
+from keras.models import Sequential
+import time
+from sklearn.metrics import mean_squared_error
+# from matplotlib import pyplot
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
+
+import os 
+os.chdir('')
+data = pd.read_csv('time_series.csv')
+
+series = data[['F']]
+series.head()
+
+scaler = MinMaxScaler(feature_range=(-1, 1))
+scaled = scaler.fit_transform(series.values)
+series = pd.DataFrame(scaled)
+
+
+window_size = 2
+
+series_s = series.copy()
+for i in range(window_size):
+    series = pd.concat([series, series_s.shift(-(i+1))], axis = 1)
+    
+series.dropna(axis=0, inplace=True)
+
+series.head()
+
+nrow = round(0.95*series.shape[0])
+
+train = series.iloc[:nrow, :]
+test = series.iloc[nrow:,:]
+
+train_X = train.iloc[:,:-1]
+train_y = train.iloc[:,-1]
+test_X = test.iloc[:,:-1]
+test_y = test.iloc[:,-1]
+train_X = train_X.values
+train_y = train_y.values
+test_X = test_X.values
+test_y = test_y.values
+train_X = train_X.reshape(train_X.shape[0],train_X.shape[1],1)
+test_X = test_X.reshape(test_X.shape[0],test_X.shape[1],1)
+
+train_X.shape
+train_y.shape
+test_X.shape
+test_y.shape
+
+train_X.shape
+
+del model
+
+model = Sequential()
+model.add(LSTM(input_shape = (2,1), output_dim= 2, return_sequences = True))
+model.add(Dropout(0.5))
+model.add(LSTM(256))
+model.add(Dropout(0.5))
+model.add(Dense(1))
+model.add(Activation("linear"))
+model.compile(loss="mse", optimizer="adam")
+model.summary()
+
+model.fit(train_X,train_y,batch_size=512,nb_epoch=40,validation_split=0.1)
+
+# predict train set 
+pred_tr = model.predict(train_y)
+pred_tr = scaler.inverse_transform(pred_tr)
+actual_tr = scaler.inverse_transform(train_y)
+pyplot.plot(actual_tr)
+pyplot.plot(pred_tr)
+
+preds = model.predict(test_X)
+
+preds = scaler.inverse_transform(preds)
+actual = scaler.inverse_transform(test_y)
+
+preds_df = pd.DataFrame(preds)
+
+preds_df
+
+actual
+
+from matplotlib import pyplot
+pyplot.plot(preds)
+pyplot.show()
+
+pyplot.plot(series)
+pyplot.show()
